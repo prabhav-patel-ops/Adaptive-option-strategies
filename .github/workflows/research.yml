@@ -75,10 +75,19 @@ jobs:
         env:
           SITE: ${{ steps.deployment.outputs.page_url }}
         run: |
-          curl -fsSL --retry 4 --retry-all-errors "${SITE%/}/" | grep -F 'Adaptive Option Strategies' > /dev/null
-          curl -fsSL --retry 4 --retry-all-errors "${SITE%/}/model-lab.html" | grep -F 'Pricing laboratory' > /dev/null
-          curl -fsSL --retry 4 --retry-all-errors "${SITE%/}/research.json?run=$GITHUB_RUN_ID" > research.json
-          python -c 'import json, os; d = json.load(open("research.json")); assert d["schema"] == 1 and d["run_id"] == os.environ["GITHUB_RUN_ID"] and d["commit"] == os.environ["GITHUB_SHA"]'
+          site="${SITE%/}"
+          for attempt in $(seq 1 15); do
+            if curl -fsSL --max-time 15 -H 'Cache-Control: no-cache' "$site/research.json" > research.json &&
+              python -c 'import json, os; d = json.load(open("research.json")); assert d["schema"] == 1 and d["run_id"] == os.environ["GITHUB_RUN_ID"] and d["commit"] == os.environ["GITHUB_SHA"]' &&
+              curl -fsSL --max-time 15 "$site/" | grep -F 'Adaptive Option Strategies' > /dev/null &&
+              curl -fsSL --max-time 15 "$site/model-lab.html" | grep -F 'Pricing laboratory' > /dev/null; then
+              exit 0
+            fi
+            echo "Waiting for Pages to serve this run (attempt $attempt of 15)."
+            sleep 8
+          done
+          echo "::error::Pages did not serve this run's dashboard and manifest."
+          exit 1
       - name: Report a failed research refresh
         if: needs.build.outputs.research_exit != '0'
         run: exit 1

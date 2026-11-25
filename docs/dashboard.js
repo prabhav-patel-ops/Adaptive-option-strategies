@@ -46,7 +46,7 @@ let research = null;
 let currentState = "unavailable";
 let plot = null;
 
-function canvasFrame(canvas, left) {
+function canvasFrame(canvas, left, rightMargin = 16) {
   const { width, height } = canvas.getBoundingClientRect();
   if (!width || !height) return null;
   const ratio = window.devicePixelRatio || 1;
@@ -56,7 +56,7 @@ function canvasFrame(canvas, left) {
   context.scale(ratio, ratio);
   context.lineJoin = "round";
   context.font = "11px Consolas, monospace";
-  return { context, left, right: width - 16, top: 12, bottom: height - 27 };
+  return { context, left, right: width - rightMargin, top: 12, bottom: height - 27 };
 }
 
 function line(context, x1, y1, x2, y2, color) {
@@ -139,7 +139,7 @@ function drawBand() {
   byId("gamma-value").value = selected.toFixed(5);
   byId("shock-value").value = (stress * 100).toFixed(2) + "%";
   byId("band-value").value = tolerance(selected).toFixed(4);
-  const box = canvasFrame(bandChart, 46);
+  const box = canvasFrame(bandChart, 46, 25);
   if (!box) return;
   const { context, left, right, bottom } = box;
   const y = verticalScale(box, 0, band, value => value.toFixed(3));

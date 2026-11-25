@@ -1,5 +1,5 @@
-numpy
-pandas
-scipy
-requests
-pytest
+numpy>=1.26,<3
+pandas>=2.2,<3
+scipy>=1.13,<2
+requests>=2.32,<3
+pytest>=8,<10

@@ -1,0 +1,84 @@
+name: Research and Pages
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 13 3 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-pages
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    outputs:
+      research_exit: ${{ steps.research.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Stage dashboard
+        run: |
+          mkdir site
+          cp docs/index.html docs/dashboard.css docs/dashboard.js docs/model-lab.html site/
+      - name: Validate data and refresh research
+        id: research
+        env:
+          NSE_ACCESS_AUTHORIZED: ${{ vars.NSE_ACCESS_AUTHORIZED }}
+          NSE_CLOUD_PROCESSING_AUTHORIZED: ${{ vars.NSE_CLOUD_PROCESSING_AUTHORIZED }}
+          NSE_PUBLISH_DERIVED: ${{ vars.NSE_PUBLISH_DERIVED }}
+          NSE_HISTORY_START: ${{ vars.NSE_HISTORY_START }}
+          NSE_CALENDAR_URL: ${{ secrets.NSE_CALENDAR_URL }}
+          NSE_ARCHIVE_URL_TEMPLATE: ${{ secrets.NSE_ARCHIVE_URL_TEMPLATE }}
+          NSE_FEED_TOKEN: ${{ secrets.NSE_FEED_TOKEN }}
+        run: |
+          code=0
+          python run_research.py --ci-status site/research.json || code=$?
+          test -s site/research.json
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy dashboard
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Check Pages payload
+        env:
+          SITE: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          curl -fsSL --retry 4 --retry-all-errors "${SITE%/}/" | grep -F 'Adaptive Option Strategies' > /dev/null
+          curl -fsSL --retry 4 --retry-all-errors "${SITE%/}/model-lab.html" | grep -F 'Pricing laboratory' > /dev/null
+          curl -fsSL --retry 4 --retry-all-errors "${SITE%/}/research.json?run=$GITHUB_RUN_ID" > research.json
+          python -c 'import json, os; d = json.load(open("research.json")); assert d["schema"] == 1 and d["run_id"] == os.environ["GITHUB_RUN_ID"] and d["commit"] == os.environ["GITHUB_SHA"]'
+      - name: Report a failed research refresh
+        if: needs.build.outputs.research_exit != '0'
+        run: exit 1
